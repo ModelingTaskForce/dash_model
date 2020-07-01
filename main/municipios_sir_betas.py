@@ -78,7 +78,7 @@ def filter_inconsistent_data(data):
     dat['totalCases'] = corr_counts
     return dat[dat['totalCases'] > 0]
 
-pops = pd.read_csv('../../populacao_municipios_ibge_20200622.csv')
+pops = pd.read_csv('../data/populacao_municipios_ibge_20200622.csv')
 pops['ibgeID'] = 100000 * pops['COD. UF'] + pops['COD. MUNIC']
 
 url = 'https://raw.githubusercontent.com/wcota/covid19br/master/cases-brazil-cities-time.csv'
