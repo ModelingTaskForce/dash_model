@@ -6,7 +6,6 @@ Created on Fri Jun 26 16:56:41 2020
 @author: lhunlindeion
 """
 
-import numpy as np
 import pandas as pd
 from model_SIR import SIR_BETAS
 import matplotlib.pyplot as plt
@@ -27,10 +26,7 @@ for nbetas in range(1, nbeta_max+1):
     model = SIR_BETAS(N, 16)
     model.fit_lsquares(data["PA"].to_numpy(), t=data['DayNum'].to_numpy(), nbetas=nbetas, stand_error=True, nrand=16)
     model.fit_ML(data["PA"].to_numpy(), t=data['DayNum'].to_numpy(), nbetas=nbetas, init=model.pos_ls)
-
-#model.fit(data["PA"].to_numpy(), t=data['DayNum'].to_numpy(), nbetas=2)
     models.append(model)
-#tt, Yo = model.predict()
 
 
 #%%
@@ -42,8 +38,6 @@ for model in models:
     plt.plot(tt, Yp, label='Fit LS - n={}, BIC={}'.format(model.nbetas, model.BIC()))
     tt, Yo = model.predict(coefs='ML')
     plt.plot(tt, Yo, label='Fit ML - n={}, BIC={}'.format(model.nbetas, model.BIC('ML')))
-
-#plt.plot(tt, Yo, label='New Fit - PSO')
 
 plt.legend()
 

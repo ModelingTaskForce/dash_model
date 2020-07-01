@@ -9,18 +9,21 @@ Created on Fri Jun 26 18:00:37 2020
 import numpy as np
 import pandas as pd
 from model_SIR import SIR_BETAS
-#import sys
-import matplotlib.pyplot as plt
-#import copyw
-plt.close('all')
 
-stand_error = True
-nbetas_max = 3
-nproc = 16
-pred_days = 7
-min_casos = 150
-min_dias = 15
+gen_plots = False #If you want to see the fits, change to True
+stand_error = True #If false, uses the non-normalized residuals
+nproc = 16 #The number of cores to use.
+nrand = 16 # number of (random) initial conditions to run the LS code.
+pred_days = 7 #Number of days to predict in the future.
+min_casos = 150 # minimum of cases to the city be fitted
+min_dias = 15 # minimum of days with cases to the city be fitted.
 
+if gen_plots:
+    import matplotlib.pyplot as plt
+    plt.close('all')
+
+
+#Convert the parameters from the fitted model to the summary format
 def create_summary(model, nbetas, ibgeid):
     temp = dict()
     temp['ibgeID'] = ibgeid
@@ -34,6 +37,8 @@ def create_summary(model, nbetas, ibgeid):
         temp['tchange_{}'.format(j)] = model.pars_opt_ls['tcut'][j]
     return temp
 
+
+#Generate the output dataframe from the fitted data 
 def create_output(model, data, pred_days, ibgeid):
     tts, Y, mY = model.predict(t=np.r_[model.t, model.t[-1]+np.arange(1,1+pred_days)],
                                coefs='LS', model_output=True)
@@ -56,7 +61,10 @@ def create_output(model, data, pred_days, ibgeid):
     temp['infectado'] = mY[:,1]
     temp['recuperado'] = mY[:,2]
     return pd.DataFrame(temp) 
-    
+
+
+#A simple function to remove inconsistent data points, it only works
+#with individual points
 def filter_inconsistent_data(data):
     dat = data.copy()
     dat = dat.reset_index(drop=True)
@@ -78,17 +86,22 @@ def filter_inconsistent_data(data):
     dat['totalCases'] = corr_counts
     return dat[dat['totalCases'] > 0]
 
+
+#Load population data
 pops = pd.read_csv('../data/populacao_municipios_ibge_20200622.csv')
 pops['ibgeID'] = 100000 * pops['COD. UF'] + pops['COD. MUNIC']
 
+#Load epidemic data
 url = 'https://raw.githubusercontent.com/wcota/covid19br/master/cases-brazil-cities-time.csv'
 data = pd.read_csv(url)
 data['date'] = pd.to_datetime(data['date'], yearfirst=True)
 data['DayNum'] = data['date'].dt.dayofyear
 cidades = data.ibgeID.unique()
-#estados = ['SP']
-columns = ['DayNum', 'totalCases', 'newCases', 'deaths', 'city', 'state']
 
+
+#Prepare output dataFrames
+nbetas_max = 3
+columns = ['DayNum', 'totalCases', 'newCases', 'deaths', 'city', 'state']
 outp_par = {'ibgeID':[], 'gamma':[], 'I0':[], 't0':[]}
 for i in range(nbetas_max):
     outp_par['beta_{}'.format(i)] = []
@@ -96,11 +109,14 @@ for i in range(nbetas_max-1):
     outp_par['tchange_{}'.format(i)] = []
 outp_par = pd.DataFrame(outp_par)
 
-#%%
 outp_data = pd.DataFrame({'UF':[], 'city':[], 'date':[], 'ibgeID':[],  'newCases':[],   'mortes':[],
                          'TOTAL':[], 'totalCasesPred':[], 'residuo_quadratico':[],
                          'res_quad_padronizado':[],	'suscetivel':[],
                          'infectado':[], 'recuperado':[]})
+
+#%%
+
+#Main loop
 j = 0
 for i, cidade in enumerate(cidades):
     print(cidade, i, len(cidades))
@@ -116,20 +132,24 @@ for i, cidade in enumerate(cidades):
             nbetas = 2
         model = SIR_BETAS(Ne, nproc)
         model.fit_lsquares(data_fil['totalCases'].to_numpy(), data_fil['DayNum'].to_numpy(),
-                           nbetas=nbetas, stand_error=True, nrand=16)
+                           nbetas=nbetas, stand_error=True, nrand=nrand)
         temp = create_summary(model, nbetas, cidade)
         outp_par = outp_par.append(temp, ignore_index=True)
         outp_data = pd.concat([outp_data,create_output(model, data_fil, pred_days,\
                             cidade)], sort=False)
-        tts, Y = model.predict(coefs='LS')
-        if j % 25 == 0:
-            plt.figure()
-        plt.subplot(5,5,(j%25)+1)
-        plt.plot(model.t, model.Y, label='Data')
-        plt.plot(tts, Y, label='Fit')
-        plt.title(cidade)
-        if j % 25 == 24:
-            plt.tight_layout()
-        j = j + 1
+        if gen_plots:
+            tts, Y = model.predict(coefs='LS')
+            if j % 25 == 0:
+                plt.figure()
+            plt.subplot(5,5,(j%25)+1)
+            plt.plot(model.t, model.Y, label='Data')
+            plt.plot(tts, Y, label='Fit')
+            plt.title(cidade)
+            if j % 25 == 24:
+                plt.tight_layout()
+            j = j + 1
+
+#%%
+#Save output
 outp_par.to_csv('sir_municipios_sumario.csv', index=False)
 outp_data.to_csv('municipios.csv', index=False)
