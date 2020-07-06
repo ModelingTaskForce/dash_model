@@ -11,14 +11,15 @@ import scipy.integrate as spi
 from scipy.optimize import least_squares, minimize
 import copy
 import joblib
-from scipy.stats import poisson
+from scipy.stats import poisson, nbinom
 
 class SIR_BETAS:
     ''' SIR Model'''
-    def __init__(self,tamanhoPop,numeroProcessadores=None):
+    def __init__(self,tamanhoPop,numeroProcessadores=None, use_tot=True):
         self.N = tamanhoPop
         self.numeroProcessadores = numeroProcessadores
         self.pos = None
+        self.use_tot = use_tot
 
     def _SIR_eq(self, X, t, pars):
         S, I, R, Nw = X
@@ -75,11 +76,11 @@ class SIR_BETAS:
         pars = {'x0': coefs[0],
                 'gamma': coefs[1],
                 'beta': coefs[2:2+self.nbetas],
-                'tcut': coefs[2+self.nbetas:]
+                'tcut': coefs[2+self.nbetas:1+2*self.nbetas]
                 }
         return pars
         
-    def create_std_bounds(self):
+    def create_std_bounds(self, unb):
         self.bound = [[1./self.N, 1./21] , [10*self.Y[0]/self.N, 0.2]]
         for i in range(self.nbetas):
             self.bound[0].append(0)
@@ -87,10 +88,13 @@ class SIR_BETAS:
         for i in range(self.nbetas-1):
             self.bound[0].append(self.t[0]+0.5)
             self.bound[1].append(self.t[-1]-9.5)
+        if unb:
+            self.bound[0].append(1.)
+            self.bound[1].append(np.max(self.Y)**2)
         self.bound[0] = np.array(self.bound[0])
         self.bound[1] = np.array(self.bound[1])
 
-    def prepare_to_fit(self, data, t, bound=None, nbetas=2):
+    def prepare_to_fit(self, data, t, bound=None, nbetas=2, unb=False):
         self.nbetas = nbetas
         self.Y = data
         if type(t) == type(None):
@@ -98,23 +102,32 @@ class SIR_BETAS:
         else:
             self.t = t
         if type(bound) == type(None):
-            self.create_std_bounds()
+            self.create_std_bounds(unb)
         else:
             self.bound = bound
     
     def _negloglikehood(self, coefs):
         '''
         estimates a loglikehood supposing that the new cases follows a
-        poisson process with the model new cases as the parameter
+        (a) poisson process if len(coefs) == 2*nbetas + 1
+        (b) a negative binomial if len(coefs) == 2*nbetas + 2
+         with the model new cases as the parameter
         '''
         ts, mY = self._call_ODE(self.t, self._conversor(coefs))
-        mus = self.N * mY[:,-1]
-        ks = self.Y
-        return - (poisson.logpmf(ks, mus)).sum()
+        if self.use_tot:
+            mus = self.N * mY[:,-1]
+            ks = self.Y
+        else:
+            mus = self.N * np.diff(mY[:,-1])
+            ks = np.diff(self.Y)
+        if len(coefs) == 2 * self.nbetas + 1:
+            return - (poisson.logpmf(ks, mus)).sum()
+        else:
+            return - (nbinom.logpmf(ks, coefs[-1], coefs[-1]/(mus + coefs[-1]))).sum()
     
     def BIC(self, coefs='LS'):
         if type(coefs) == type(None):
-            coefs = self.pos
+            coefs = self.pos_ml
         elif type(coefs) == str:
             if coefs  == 'LS':
                 coefs = self.pos_ls
@@ -124,15 +137,21 @@ class SIR_BETAS:
 
     def _residuals(self, coefs, stand_error=False):
         ts, mY = self._call_ODE(self.t, self._conversor(coefs))
-        errs = (self.Y- self.N *  mY[:,-1])
+        if self.use_tot:
+            dat = self.Y
+            mod = self.N *  mY[:,-1]
+        else:
+            dat = np.diff(self.Y)
+            mod = self.N * np.diff(mY[:,-1])
+        errs = (dat - mod)
         if stand_error:
-            errs = errs / np.sqrt(self.N * mY[:,-1] + 1)
+            errs = errs / np.sqrt(mod + 1)
         if np.isnan(errs).any():
             print(coefs)
         return errs
 
-    def fit_ML(self,  data, t=None, nbetas=2, bound=None, nrand=20, init=None):
-        self.prepare_to_fit(data,t, bound, nbetas)
+    def fit_ML(self,  data, t=None, nbetas=2, bound=None, nrand=20, init=None, use_nbinom=True):
+        self.prepare_to_fit(data,t, bound, nbetas, use_nbinom)
         if type(init) == type(None):
             cost_best = np.inf
             res_best = None

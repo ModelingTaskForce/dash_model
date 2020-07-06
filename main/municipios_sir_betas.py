@@ -109,7 +109,7 @@ for i in range(nbetas_max-1):
     outp_par['tchange_{}'.format(i)] = []
 outp_par = pd.DataFrame(outp_par)
 
-outp_data = pd.DataFrame({'UF':[], 'city':[], 'date':[], 'ibgeID':[],  'newCases':[],   'mortes':[],
+outp_data = pd.DataFrame({'city':[], 'date':[], 'ibgeID':[],  'newCases':[],   'mortes':[],
                          'TOTAL':[], 'totalCasesPred':[], 'residuo_quadratico':[],
                          'res_quad_padronizado':[],	'suscetivel':[],
                          'infectado':[], 'recuperado':[]})
